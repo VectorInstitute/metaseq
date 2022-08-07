@@ -125,7 +125,6 @@ def batching_loop(timeout=100, max_tokens=MAX_BATCH_TOKENS):
                         "top_p",
                         "n",
                         "best_of",
-                        "echo",
                         "logprobs",
                         "stop",
                         "echo",
