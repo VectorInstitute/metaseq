@@ -91,7 +91,7 @@ class ModelParallelTransformerLanguageModel(TransformerLanguageModel):
             use_cpu_initialization=not getattr(
                 args, "tensor_parallel_init_model_on_gpu", False
             ),
-            dtype=dtype,
+# dtype=dtype,
         )
         return embed_tokens
 

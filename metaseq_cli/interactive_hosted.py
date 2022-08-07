@@ -128,11 +128,15 @@ def batching_loop(timeout=100, max_tokens=MAX_BATCH_TOKENS):
                         "echo",
                         "logprobs",
                         "stop",
+                        "echo",
                     ]:
                         if key in ro:
                             request_object[key] = ro[key]
-                # do the actual generations
-                request_object["seed"] = random.randint(1, 20000)
+
+                request_object["seed"] = (
+                    ro["seed"] if "seed" in ro else random.randint(1, 20000)
+                )
+
                 distributed_utils.broadcast_object(
                     request_object,
                     src_rank=0,
@@ -166,8 +170,8 @@ def worker_main(cfg1: MetaseqConfig, namespace_args=None):
     global MODE
 
     # make sure generations are stochastic since we have many workers
-    torch.manual_seed(random.randint(1, 20000))
-    torch.cuda.manual_seed(random.randint(1, 20000))
+    torch.manual_seed(6 + torch.distributed.get_rank())
+    torch.cuda.manual_seed(6 + torch.distributed.get_rank())
     MODE = "worker"
     cfg = cfg1
 
@@ -235,14 +239,24 @@ def _create_error_response(msg, http_code, **others):
     return response
 
 
+@app.route("/encode", methods=["POST"])
+def encode():
+    # MUST BE a list of strings!
+    prompts = request.json["prompt"]
+
+    return {"tok": [encode_fn(generator, p) for p in prompts]}
+
+
 @app.route("/completions", methods=["POST"])
 @app.route("/v1/engines/<engine>/completions", methods=["POST"])
 @app.route("/v2/engines/<engine>/completions", methods=["POST"])
 @app.route("/engines/<engine>/completions", methods=["POST"])
 def completions(engine=None):
     # before anything else, check that we've got a valid API key
-    if not _validate_key(request.headers.get("authorization", "")):
-        return _create_error_response("Invalid API key or API key missing.", 401)
+
+    # TODO: reenable
+    # if not _validate_key(request.headers.get("authorization", "")):
+    # return _create_error_response("Invalid API key or API key missing.", 401)
 
     # prompt can be 4 types:
     # - str. Basic case. Return one generation.
@@ -327,6 +341,7 @@ def completions(engine=None):
         if isinstance(generations, Exception):
             raise generations
         results += generations
+
     # transform the result into the openai format
     return OAIResponse(results).__dict__()
 
@@ -357,6 +372,10 @@ def cli_main():
     port = DEFAULT_PORT
     cfg = convert_namespace_to_omegaconf(args)
     cfg.distributed_training.distributed_world_size = TOTAL_WORLD_SIZE
+
+    # TODO: keep?
+    cfg.distributed_training.distributed_port = 0
+
     distributed_utils.call_main(cfg, worker_main, namespace_args=args)
 
 
