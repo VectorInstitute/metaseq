@@ -136,11 +136,13 @@ def batching_loop(timeout=100, max_tokens=MAX_BATCH_TOKENS):
                     ro["seed"] if "seed" in ro else random.randint(1, 20000)
                 )
 
-                distributed_utils.broadcast_object(
-                    request_object,
-                    src_rank=0,
-                    group=distributed_utils.get_global_group(),
-                )
+                if torch.distributed.is_initialized():
+                    distributed_utils.broadcast_object(
+                        request_object,
+                        src_rank=0,
+                        group=distributed_utils.get_global_group(),
+                    )
+
                 try:
                     generations = generator.generate(**request_object)
                 except RuntimeError:
@@ -155,7 +157,7 @@ def batching_loop(timeout=100, max_tokens=MAX_BATCH_TOKENS):
                     work_item.return_queue.put((work_item.uid, gen))
 
                 batch.clear()
-            else:
+            lse:
                 # back to the loop
                 continue
 
@@ -178,10 +180,12 @@ def worker_main(cfg1: MetaseqConfig, namespace_args=None):
     models = generator.load_model()  # noqa: F841
 
     logger.info(f"loaded model {cfg.distributed_training.distributed_rank}")
-    request_object = distributed_utils.broadcast_object(
-        None, src_rank=0, group=distributed_utils.get_global_group()
-    )
-    if torch.distributed.get_rank() == 0:
+    if torch.distributed.is_initialized():
+        request_object = distributed_utils.broadcast_object(
+            None, src_rank=0, group=distributed_utils.get_global_group()
+        )
+
+    if not torch.distributed.is_initialized() or torch.distributed.get_rank() == 0:
         logger.info(f"Worker engaged! {get_my_ip()}:{port}")
         thread = threading.Thread(target=batching_loop, daemon=True)
         thread.start()
