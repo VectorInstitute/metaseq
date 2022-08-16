@@ -8,7 +8,6 @@ import unittest
 import torch.nn.functional as F
 from metaseq.scripts.convert_to_singleton import create_generation_config_with_defaults
 from metaseq.distributed import utils as distributed_utils
-from metaseq.distributed import fsdp_enable_wrap, fsdp_wrap
 from metaseq.dataclass.configs import MetaseqConfig
 from metaseq.hub_utils import tensorize_input, get_next_token, setup_vocab_and_merges
 
@@ -42,24 +41,19 @@ def load_mp_model_and_run_eval(cfg: MetaseqConfig, **kwargs):
     def _build_model(cfg, task):
         cfg.model.tensor_parallel_init_model_on_gpu = True
         model = task.build_model(cfg.model).cuda()
-        return fsdp_wrap(model)
+        return model
 
-    with fsdp_enable_wrap(
-        cfg.distributed_training,
-        use_sharded_state=cfg.distributed_training.use_sharded_state,
-    ):
-        models, _model_args, _task = checkpoint_utils.load_model_ensemble_and_task(
-            utils.split_paths(cfg.common_eval.path),
-            arg_overrides=None,
-            task=task,
-            suffix=cfg.checkpoint.checkpoint_suffix,
-            strict=True,
-            num_shards=cfg.checkpoint.checkpoint_shard_count,
-            build_model_hook=_build_model,
-        )
-        model = models[0]
+    models, _model_args, _task = checkpoint_utils.load_model_ensemble_and_task(
+        utils.split_paths(cfg.common_eval.path),
+        arg_overrides=None,
+        task=task,
+        suffix=cfg.checkpoint.checkpoint_suffix,
+        strict=True,
+        num_shards=cfg.checkpoint.checkpoint_shard_count,
+        build_model_hook=_build_model,
+    )
+    model = models[0]
 
-    model.summon_full_params()
     model = model.eval()
 
     with torch.no_grad():
@@ -125,7 +119,7 @@ class TestHFCompatibility(unittest.TestCase):
     def test_model_parallel_metaseq_hf_compatibility(self):
         model_path = os.path.join(os.path.dirname(__file__), "125m")
 
-        cfg = create_generation_config_with_defaults(model_path)
+        cfg = create_generation_config_with_defaults(model_path, megatron=True)
         mp_logits_list = distributed_utils.call_main(
             cfg, load_mp_model_and_run_eval, model_path=model_path
         )
