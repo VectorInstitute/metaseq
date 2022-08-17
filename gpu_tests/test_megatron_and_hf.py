@@ -105,6 +105,11 @@ class TestMegatronCompatability(unittest.TestCase):
         self.assertTrue(len(hf_logits_list) == len(mp_logits_list))
 
         for hf_logit, mp_logit in zip(hf_logits_list, mp_logits_list):
+            metaseq_next_token = get_next_token(mp_logit, tokenizer)
+            mp_next_token = get_next_token(hf_logit, tokenizer)
+
+            self.assertEqual(metaseq_next_token, mp_next_token)
+
             self.assertTrue(
                 torch.allclose(
                     hf_logit.cpu().float(), mp_logit.cpu().float(), atol=1e-1
