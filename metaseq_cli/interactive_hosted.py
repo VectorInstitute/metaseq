@@ -96,7 +96,10 @@ def batching_loop(timeout=100, max_tokens=MAX_BATCH_TOKENS):
             # fit the max sequence length
             max_prompt_len = max(x.prompt_len for x in [item] + batch)
             max_gen_len = max(x.gen_len for x in [item] + batch)
-            overflow = max_prompt_len + max_gen_len < MAX_SEQ_LEN
+# overflow = max_prompt_len + max_gen_len < MAX_SEQ_LEN
+
+            # bug fix here
+            overflow = max_prompt_len + max_gen_len > MAX_SEQ_LEN
             if batch and (batch_cost > max_tokens or overflow):
                 # we're over budget, put it back in the queue
                 target_queue.put(item)
@@ -107,6 +110,7 @@ def batching_loop(timeout=100, max_tokens=MAX_BATCH_TOKENS):
         except queue.Empty:
             target_queue = None
             if batch:
+                logger.info(f"runnning length of batch is {len(batch)}")
                 request_object = {
                     "inputs": [],
                     "min_tokens": [],
@@ -175,6 +179,9 @@ def worker_main(cfg1: MetaseqConfig, namespace_args=None):
     generator = GeneratorInterface(cfg)
     models = generator.load_model()  # noqa: F841
 
+    assert len(models) == 1
+    logger.info("model class is {}".format(models[0].__class__.__qualname__))
+
     logger.info(f"loaded model {cfg.distributed_training.distributed_rank}")
     if torch.distributed.is_initialized():
         request_object = distributed_utils.broadcast_object(
@@ -213,6 +220,8 @@ def handle_exception(e):
 
 
 def _validate_key(key):
+    return True
+
     # denylist a few placeholders various people have used
     if key == "":
         return False
@@ -233,6 +242,9 @@ def _create_error_response(msg, http_code, **others):
         "code": None,
         **others,
     }
+
+    logger.info(msg)
+
     response = jsonify({"error": error_dict})
     response.status = http_code
     return response
@@ -360,6 +372,11 @@ def cli_main():
     port = DEFAULT_PORT
     cfg = convert_namespace_to_omegaconf(args)
     cfg.distributed_training.distributed_world_size = TOTAL_WORLD_SIZE
+
+    # for debug only
+    cfg.distributed_training.distributed_port = 0
+    #
+
     distributed_utils.call_main(cfg, worker_main, namespace_args=args)
 
 
